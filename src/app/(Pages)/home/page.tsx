@@ -1,0 +1,208 @@
+"use client";
+
+import { Avatar, Button } from "antd";
+import TextArea from "antd/es/input/TextArea";
+import { SendOutlined } from "@ant-design/icons";
+import { useEffect, useRef, useState } from "react";
+import { getMessagesByConversationApi, createConversationApi, sendMessageApi } from "@/api/chat";
+import { useSearchParams } from "next/navigation";
+import socket from "@/util/socket";
+import { useAppSelector } from "@/util/store";
+
+let isTyping = false;
+export default function Home() {
+    const searchParams = useSearchParams();
+    const receiverId = searchParams.get("id");
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    const [conversationId, setConversationId] = useState(0);
+    const [conversation, setConversation] = useState<any[]>([]);
+    const [message, setMessage] = useState("");
+
+    const user = useAppSelector((state) => state.user);
+    const [isReceiverTyping, setIsReceiverTyping] = useState(false);
+
+    useEffect(() => {
+        if (receiverId && user.id) {
+            const getMessages = async () => {
+                const respPostConversationApi = await createConversationApi({
+                    payload: {
+                        senderId: user.id,
+                        receiverId: +receiverId,
+                    },
+                });
+
+                if (respPostConversationApi.statusText === "Created") {
+                    setConversationId(+respPostConversationApi.data.id);
+                    const resp = await getMessagesByConversationApi({
+                        payload: {
+                            conversationId: respPostConversationApi.data.id,
+                        },
+                    });
+
+                    if (resp.ok) {
+                        setConversation(resp.data);
+                    }
+                }
+            };
+
+            getMessages();
+        }
+    }, [receiverId, user.id]);
+
+    useEffect(() => {
+        if (user.id) {
+            socket.emit("register", user.id);
+            socket.on("receive-message", (message) => {
+                setConversation((prev) => [...prev, message]);
+            });
+            socket.on("is-typing", ({ senderId, receiverId, isTyping }) => {
+                setIsReceiverTyping(isTyping);
+                console.log("sent");
+            });
+        }
+
+        return () => {
+            socket.off("receive-message");
+            socket.off("typing");
+        };
+    }, [user.id]);
+
+    useEffect(() => {
+        if (containerRef.current) {
+            containerRef.current.scrollTop = containerRef.current.scrollHeight;
+        }
+    }, [conversation]);
+
+    const handleMessage = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const value = e.target.value;
+        setMessage(value);
+
+        if (value && !isTyping) {
+            socket.emit("typing", { senderId: user.id, receiverId: receiverId, isTyping: true });
+            isTyping = true;
+        } else if (!value) {
+            socket.emit("typing", { senderId: user.id, receiverId: receiverId, isTyping: false });
+            isTyping = false;
+        }
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            handleSend();
+        }
+    };
+
+    const handleSend = async () => {
+        if (message) {
+            const resp = await sendMessageApi({
+                payload: {
+                    senderId: user.id,
+                    receiverId: receiverId ? +receiverId : 0,
+                    conversationId: conversationId,
+                    content: message,
+                },
+            });
+
+            setConversation((prev) => [...prev, resp.data]);
+            setMessage("");
+            socket.emit("typing", { senderId: user.id, receiverId: receiverId, isTyping: false });
+            isTyping = false;
+        }
+    };
+
+    const displayMessage = (data: any[]) => {
+        return data.map((message: any, index: number) => {
+            if (message.senderId == user.id) {
+                return (
+                    <div key={message.id} className="flex justify-end">
+                        <div className="flex flex-col items-end space-y-2 w-[50%]">
+                            <p className="py-2 px-4 max-w-max rounded-3xl bg-[#1677ff] w-full text-white">
+                                {message.content}
+                            </p>
+                        </div>
+                    </div>
+                );
+            } else if (message.senderId == receiverId) {
+                return (
+                    <div key={message.id} className="flex items-end gap-x-3 w-[50%]">
+                        <div>
+                            <Avatar
+                                src="https://api.dicebear.com/7.x/miniavs/svg?seed=1"
+                                style={{
+                                    backgroundColor: "#f56a00",
+                                    visibility:
+                                        data[index + 1]?.senderId != receiverId
+                                            ? "visible"
+                                            : "hidden",
+                                }}
+                            />
+                        </div>
+                        <div className="grow space-y-2">
+                            <p className="py-2 px-4 max-w-max rounded-3xl bg-zinc-100 w-full">
+                                {message.content}
+                            </p>
+                        </div>
+                    </div>
+                );
+            } else {
+                return null;
+            }
+        });
+    };
+
+    return (
+        <>
+            <div className="grow flex flex-col justify-end overflow-auto">
+                <div ref={containerRef} className="space-y-2 overflow-auto">
+                    {displayMessage(conversation)}
+                    {isReceiverTyping && (
+                        <div className="flex items-end gap-x-3 w-[50%]">
+                            <div>
+                                <Avatar
+                                    src="https://api.dicebear.com/7.x/miniavs/svg?seed=1"
+                                    style={{
+                                        backgroundColor: "#f56a00",
+                                    }}
+                                />
+                            </div>
+                            <div className="h-[32px] flex items-center space-x-1 py-2 px-4 rounded-3xl bg-zinc-100">
+                                <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
+                                <div
+                                    className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                                    style={{
+                                        animationDelay: "0.2s",
+                                        animationFillMode: "backwards",
+                                    }}
+                                />
+                                <div
+                                    className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                                    style={{
+                                        animationDelay: "0.4s",
+                                        animationFillMode: "backwards",
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+            <div className="flex items-end gap-x-3 mt-3">
+                <TextArea
+                    value={message}
+                    onChange={handleMessage}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Type message"
+                    autoSize={{ minRows: 1, maxRows: 3 }}
+                />
+                <Button
+                    type="primary"
+                    style={{ width: 50 }}
+                    onClick={handleSend}
+                    icon={<SendOutlined style={{ color: "white" }} />}
+                />
+            </div>
+        </>
+    );
+}
