@@ -3,8 +3,10 @@
 import { Avatar, Card, Descriptions, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAppSelector } from "@/util/store";
+import { useAppDispatch, useAppSelector } from "@/util/store";
 import { getAllUsersApi } from "@/api/chat";
+import socket from "@/util/socket";
+import { setReceivedMessage } from "@/util/storeSlices/chatSlice";
 
 const { Text } = Typography;
 
@@ -16,9 +18,13 @@ interface IUser {
     updatedAt: string;
     lastSentMessage: {
         id: number;
+        conversationId: number;
         senderId: number;
+        receiverId: number;
         content: string;
+        timestamp: string;
         createdAt: string;
+        updatedAt: string;
     };
 }
 
@@ -28,7 +34,10 @@ export default function RootLayout({
     children: React.ReactNode;
 }>) {
     const router = useRouter();
+    const dispatch = useAppDispatch();
     const userDetails = useAppSelector((state) => state.user);
+    const { getCurrentConversation } = useAppSelector((state) => state.chat);
+
     const [users, setUsers] = useState<IUser[]>([]);
     const [currentReceiver, setCurrentReceiver] = useState<any>({});
     const [currentUser, setCurrentUser] = useState("");
@@ -36,7 +45,11 @@ export default function RootLayout({
     useEffect(() => {
         setCurrentUser(userDetails.name);
         const getUsers = async () => {
-            const resp = await getAllUsersApi();
+            const resp = await getAllUsersApi({
+                payload: {
+                    userId: userDetails.id,
+                },
+            });
             if (resp.ok) {
                 setUsers(resp.data);
                 setCurrentReceiver(resp.data[0]);
@@ -46,6 +59,34 @@ export default function RootLayout({
         };
         getUsers();
     }, [userDetails.name]);
+
+    useEffect(() => {
+        socket.on("receive-message", (message) => {
+            dispatch(setReceivedMessage(message));
+            setUsers((prevState) =>
+                prevState.map((user) => {
+                    if (user.lastSentMessage?.conversationId) {
+                        if (user.lastSentMessage.conversationId === message.conversationId) {
+                            return { ...user, lastSentMessage: message };
+                        }
+                    } else {
+                        if (
+                            (getCurrentConversation.user1Id === user.id ||
+                                getCurrentConversation.user2Id === user.id) &&
+                            user.id !== userDetails.id &&
+                            message.conversationId === getCurrentConversation.id
+                        ) {
+                            return { ...user, lastSentMessage: message };
+                        }
+                    }
+                    return user;
+                })
+            );
+        });
+        return () => {
+            socket.off("receive-message");
+        };
+    }, [JSON.stringify(getCurrentConversation)]);
 
     const handleUserClick = (user: IUser) => {
         setCurrentReceiver(user);
@@ -87,8 +128,10 @@ export default function RootLayout({
                                     </div>
                                     <div className="flex flex-col items-start justify-start">
                                         <p>{user.name}</p>
-                                        <Text type="secondary">
-                                            {user.id === userDetails.id && "You: "}
+                                        <Text type="secondary" style={{ textAlign: "left" }}>
+                                            {user.lastSentMessage?.senderId === userDetails.id &&
+                                                "You: "}
+                                            {user.lastSentMessage?.content}
                                         </Text>
                                     </div>
                                 </button>

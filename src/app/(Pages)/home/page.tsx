@@ -7,7 +7,8 @@ import { useEffect, useRef, useState } from "react";
 import { getMessagesByConversationApi, createConversationApi, sendMessageApi } from "@/api/chat";
 import { useSearchParams } from "next/navigation";
 import socket from "@/util/socket";
-import { useAppSelector } from "@/util/store";
+import { useAppDispatch, useAppSelector } from "@/util/store";
+import { setCurrentConversation } from "@/util/storeSlices/chatSlice";
 
 let isTyping = false;
 export default function Home() {
@@ -15,11 +16,12 @@ export default function Home() {
     const receiverId = searchParams.get("id");
     const containerRef = useRef<HTMLDivElement>(null);
 
-    const [conversationId, setConversationId] = useState(0);
+    const dispatch = useAppDispatch();
+    const { getCurrentConversation, getReceivedMessage } = useAppSelector((state) => state.chat);
+    const user = useAppSelector((state) => state.user);
+
     const [conversation, setConversation] = useState<any[]>([]);
     const [message, setMessage] = useState("");
-
-    const user = useAppSelector((state) => state.user);
     const [isReceiverTyping, setIsReceiverTyping] = useState(false);
 
     useEffect(() => {
@@ -27,13 +29,13 @@ export default function Home() {
             const getMessages = async () => {
                 const respPostConversationApi = await createConversationApi({
                     payload: {
-                        senderId: user.id,
-                        receiverId: +receiverId,
+                        user1Id: user.id,
+                        user2Id: +receiverId,
                     },
                 });
 
                 if (respPostConversationApi.statusText === "Created") {
-                    setConversationId(+respPostConversationApi.data.id);
+                    dispatch(setCurrentConversation(respPostConversationApi.data));
                     const resp = await getMessagesByConversationApi({
                         payload: {
                             conversationId: respPostConversationApi.data.id,
@@ -53,9 +55,6 @@ export default function Home() {
     useEffect(() => {
         if (user.id) {
             socket.emit("register", user.id);
-            socket.on("receive-message", (message) => {
-                setConversation((prev) => [...prev, message]);
-            });
             socket.on("is-typing", ({ senderId, receiverId, isTyping }) => {
                 setIsReceiverTyping(isTyping);
                 console.log("sent");
@@ -64,9 +63,13 @@ export default function Home() {
 
         return () => {
             socket.off("receive-message");
-            socket.off("typing");
+            socket.off("is-typing");
         };
     }, [user.id]);
+
+    useEffect(() => {
+        setConversation((prev) => [...prev, getReceivedMessage]);
+    }, [JSON.stringify(getReceivedMessage)]);
 
     useEffect(() => {
         if (containerRef.current) {
@@ -96,16 +99,15 @@ export default function Home() {
 
     const handleSend = async () => {
         if (message) {
-            const resp = await sendMessageApi({
+            await sendMessageApi({
                 payload: {
                     senderId: user.id,
                     receiverId: receiverId ? +receiverId : 0,
-                    conversationId: conversationId,
+                    conversationId: +getCurrentConversation.id,
                     content: message,
                 },
             });
 
-            setConversation((prev) => [...prev, resp.data]);
             setMessage("");
             socket.emit("typing", { senderId: user.id, receiverId: receiverId, isTyping: false });
             isTyping = false;

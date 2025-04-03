@@ -2,6 +2,12 @@ import axiosHelper from "@/util/axios";
 
 const url = process.env.NEXT_PUBLIC_API_URL;
 
+interface IGetAllUsersApiApi {
+    payload: {
+        userId: number;
+    };
+}
+
 interface IGetMessagesByConversationApi {
     payload: {
         conversationId: number;
@@ -10,8 +16,8 @@ interface IGetMessagesByConversationApi {
 
 export interface ICreateConversationApi {
     payload: {
-        senderId: number;
-        receiverId: number;
+        user1Id: number;
+        user2Id: number;
     };
 }
 
@@ -24,11 +30,12 @@ interface ISendMessageApi {
     };
 }
 
-export const getAllUsersApi = async () => {
+export const getAllUsersApi = async ({ payload }: IGetAllUsersApiApi) => {
     return await axiosHelper({
         url: url,
         pathname: "/users/getAllUsers",
-        method: "GET",
+        method: "POST",
+        payload: payload,
     });
 };
 
