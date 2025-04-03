@@ -71,10 +71,9 @@ export default function RootLayout({
                         }
                     } else {
                         if (
-                            (getCurrentConversation.user1Id === user.id ||
-                                getCurrentConversation.user2Id === user.id) &&
-                            user.id !== userDetails.id &&
-                            message.conversationId === getCurrentConversation.id
+                            (message.senderId === user.id &&
+                                message.receiverId === userDetails.id) ||
+                            (message.senderId === userDetails.id && message.receiverId === user.id)
                         ) {
                             return { ...user, lastSentMessage: message };
                         }
