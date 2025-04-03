@@ -36,7 +36,6 @@ export default function RootLayout({
     const router = useRouter();
     const dispatch = useAppDispatch();
     const userDetails = useAppSelector((state) => state.user);
-    const { getCurrentConversation } = useAppSelector((state) => state.chat);
 
     const [users, setUsers] = useState<IUser[]>([]);
     const [currentReceiver, setCurrentReceiver] = useState<any>({});
@@ -85,7 +84,7 @@ export default function RootLayout({
         return () => {
             socket.off("receive-message");
         };
-    }, [JSON.stringify(getCurrentConversation)]);
+    }, [userDetails.id]);
 
     const handleUserClick = (user: IUser) => {
         setCurrentReceiver(user);

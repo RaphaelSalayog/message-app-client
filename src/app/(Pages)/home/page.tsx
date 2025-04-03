@@ -8,7 +8,15 @@ import { getMessagesByConversationApi, createConversationApi, sendMessageApi } f
 import { useSearchParams } from "next/navigation";
 import socket from "@/util/socket";
 import { useAppDispatch, useAppSelector } from "@/util/store";
-import { setCurrentConversation } from "@/util/storeSlices/chatSlice";
+import { setReceivedMessage } from "@/util/storeSlices/chatSlice";
+
+interface IConversation {
+    id: number;
+    user1Id: number;
+    user2Id: number;
+    createdAt: string;
+    updatedAt: string;
+}
 
 let isTyping = false;
 export default function Home() {
@@ -17,10 +25,16 @@ export default function Home() {
     const containerRef = useRef<HTMLDivElement>(null);
 
     const dispatch = useAppDispatch();
-    const { getCurrentConversation, getReceivedMessage } = useAppSelector((state) => state.chat);
+    const { getConversation } = useAppSelector((state) => state.chat);
     const user = useAppSelector((state) => state.user);
 
-    const [conversation, setConversation] = useState<any[]>([]);
+    const [conversation, setConversation] = useState<IConversation>({
+        id: 0,
+        user1Id: 0,
+        user2Id: 0,
+        createdAt: "",
+        updatedAt: "",
+    });
     const [message, setMessage] = useState("");
     const [isReceiverTyping, setIsReceiverTyping] = useState(false);
 
@@ -35,7 +49,7 @@ export default function Home() {
                 });
 
                 if (respPostConversationApi.statusText === "Created") {
-                    dispatch(setCurrentConversation(respPostConversationApi.data));
+                    setConversation(respPostConversationApi.data);
                     const resp = await getMessagesByConversationApi({
                         payload: {
                             conversationId: respPostConversationApi.data.id,
@@ -43,39 +57,31 @@ export default function Home() {
                     });
 
                     if (resp.ok) {
-                        setConversation(resp.data);
+                        dispatch(setReceivedMessage(resp.data));
                     }
                 }
             };
 
             getMessages();
         }
-    }, [receiverId, user.id]);
 
-    useEffect(() => {
         if (user.id) {
             socket.emit("register", user.id);
             socket.on("is-typing", ({ senderId, receiverId, isTyping }) => {
                 setIsReceiverTyping(isTyping);
-                console.log("sent");
             });
         }
 
         return () => {
-            socket.off("receive-message");
             socket.off("is-typing");
         };
-    }, [user.id]);
-
-    useEffect(() => {
-        setConversation((prev) => [...prev, getReceivedMessage]);
-    }, [JSON.stringify(getReceivedMessage)]);
+    }, [receiverId, user.id]);
 
     useEffect(() => {
         if (containerRef.current) {
             containerRef.current.scrollTop = containerRef.current.scrollHeight;
         }
-    }, [conversation]);
+    }, [getConversation.length]);
 
     const handleMessage = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         const value = e.target.value;
@@ -103,7 +109,7 @@ export default function Home() {
                 payload: {
                     senderId: user.id,
                     receiverId: receiverId ? +receiverId : 0,
-                    conversationId: +getCurrentConversation.id,
+                    conversationId: +conversation.id,
                     content: message,
                 },
             });
@@ -158,7 +164,7 @@ export default function Home() {
         <>
             <div className="grow flex flex-col justify-end overflow-auto">
                 <div ref={containerRef} className="space-y-2 overflow-auto">
-                    {displayMessage(conversation)}
+                    {displayMessage(getConversation)}
                     {isReceiverTyping && (
                         <div className="flex items-end gap-x-3 w-[50%]">
                             <div>
