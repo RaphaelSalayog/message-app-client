@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { useAppDispatch, useAppSelector } from "@/util/store";
 import { getAllUsersApi } from "@/api/chat";
 import socket from "@/util/socket";
-import { setReceivedMessage } from "@/util/storeSlices/chatSlice";
+import { pushReceivedMessage } from "@/util/storeSlices/chatSlice";
+import { handleEmitTyping } from "@/util/socketEmits/typing";
 
 const { Text } = Typography;
 
@@ -38,7 +39,7 @@ export default function RootLayout({
     const userDetails = useAppSelector((state) => state.user);
 
     const [users, setUsers] = useState<IUser[]>([]);
-    const [currentReceiver, setCurrentReceiver] = useState<any>({});
+    const [currentReceiver, setCurrentReceiver] = useState<IUser | null>(null);
     const [currentUser, setCurrentUser] = useState("");
 
     useEffect(() => {
@@ -53,7 +54,7 @@ export default function RootLayout({
                 setUsers(resp.data);
                 setCurrentReceiver(resp.data[0]);
 
-                router.push(`/home?id=${resp.data[0].id}`);
+                router.push(`/messages?id=${resp.data[0].id}`);
             }
         };
         getUsers();
@@ -61,7 +62,7 @@ export default function RootLayout({
 
     useEffect(() => {
         socket.on("receive-message", (message) => {
-            dispatch(setReceivedMessage(message));
+            dispatch(pushReceivedMessage(message));
             setUsers((prevState) =>
                 prevState.map((user) => {
                     if (user.lastSentMessage?.conversationId) {
@@ -88,7 +89,12 @@ export default function RootLayout({
 
     const handleUserClick = (user: IUser) => {
         setCurrentReceiver(user);
-        router.push(`/home/?id=${user.id}`);
+        router.push(`/messages/?id=${user.id}`);
+        handleEmitTyping({
+            senderId: user.id,
+            receiverId: currentReceiver ? +currentReceiver.id : 0,
+            isTyping: false,
+        });
     };
 
     return (
@@ -114,7 +120,9 @@ export default function RootLayout({
                                 <button
                                     key={user.id}
                                     className={`w-full flex items-center gap-x-5 p-3 rounded-sm border border-zinc-100 cursor-pointer hover:bg-zinc-100 ${
-                                        currentReceiver.id === user.id && "bg-zinc-100"
+                                        currentReceiver &&
+                                        currentReceiver.id === user.id &&
+                                        "bg-zinc-100"
                                     }`}
                                     onClick={() => handleUserClick(user)}
                                 >

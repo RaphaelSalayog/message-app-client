@@ -23,7 +23,10 @@ const chatSlice = createSlice({
     name: "user",
     initialState,
     reducers: {
-        setReceivedMessage: (state, { payload }: PayloadAction<IGetConversationState>) => {
+        setConversation: (state, { payload }: PayloadAction<IGetConversationState[]>) => {
+            state.getConversation = payload;
+        },
+        pushReceivedMessage: (state, { payload }: PayloadAction<IGetConversationState>) => {
             if (Object.keys(payload).length !== 0) {
                 state.getConversation.push(payload);
             }
@@ -31,5 +34,5 @@ const chatSlice = createSlice({
     },
 });
 
-export const { setReceivedMessage } = chatSlice.actions;
+export const { pushReceivedMessage, setConversation } = chatSlice.actions;
 export default chatSlice.reducer;
