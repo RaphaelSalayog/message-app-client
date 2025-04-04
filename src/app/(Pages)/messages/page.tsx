@@ -8,7 +8,8 @@ import { getMessagesByConversationApi, createConversationApi, sendMessageApi } f
 import { useSearchParams } from "next/navigation";
 import socket from "@/util/socket";
 import { useAppDispatch, useAppSelector } from "@/util/store";
-import { setReceivedMessage } from "@/util/storeSlices/chatSlice";
+import { setConversation as setInitialConversation } from "@/util/storeSlices/chatSlice";
+import { handleEmitTyping } from "@/util/socketEmits/typing";
 
 interface IConversation {
     id: number;
@@ -21,7 +22,7 @@ interface IConversation {
 let isTyping = false;
 export default function Home() {
     const searchParams = useSearchParams();
-    const receiverId = searchParams.get("id");
+    const currentTabUserId = searchParams.get("id");
     const containerRef = useRef<HTMLDivElement>(null);
 
     const dispatch = useAppDispatch();
@@ -36,15 +37,19 @@ export default function Home() {
         updatedAt: "",
     });
     const [message, setMessage] = useState("");
-    const [isReceiverTyping, setIsReceiverTyping] = useState(false);
+    const [typingStatus, setTypingStatus] = useState({
+        senderId: 0,
+        receiverId: 0,
+        isTyping: false,
+    });
 
     useEffect(() => {
-        if (receiverId && user.id) {
+        if (currentTabUserId && user.id) {
             const getMessages = async () => {
                 const respPostConversationApi = await createConversationApi({
                     payload: {
                         user1Id: user.id,
-                        user2Id: +receiverId,
+                        user2Id: +currentTabUserId,
                     },
                 });
 
@@ -57,7 +62,7 @@ export default function Home() {
                     });
 
                     if (resp.ok) {
-                        dispatch(setReceivedMessage(resp.data));
+                        dispatch(setInitialConversation(resp.data));
                     }
                 }
             };
@@ -67,15 +72,15 @@ export default function Home() {
 
         if (user.id) {
             socket.emit("register", user.id);
-            socket.on("is-typing", ({ senderId, receiverId, isTyping }) => {
-                setIsReceiverTyping(isTyping);
+            socket.on("is-typing", (status) => {
+                setTypingStatus(status);
             });
         }
 
         return () => {
             socket.off("is-typing");
         };
-    }, [receiverId, user.id]);
+    }, [currentTabUserId, user.id]);
 
     useEffect(() => {
         if (containerRef.current) {
@@ -87,11 +92,19 @@ export default function Home() {
         const value = e.target.value;
         setMessage(value);
 
-        if (value && !isTyping) {
-            socket.emit("typing", { senderId: user.id, receiverId: receiverId, isTyping: true });
+        if (value && !isTyping && currentTabUserId) {
+            handleEmitTyping({
+                senderId: user.id,
+                receiverId: +currentTabUserId,
+                isTyping: true,
+            });
             isTyping = true;
-        } else if (!value) {
-            socket.emit("typing", { senderId: user.id, receiverId: receiverId, isTyping: false });
+        } else if (!value && currentTabUserId) {
+            handleEmitTyping({
+                senderId: user.id,
+                receiverId: +currentTabUserId,
+                isTyping: false,
+            });
             isTyping = false;
         }
     };
@@ -108,14 +121,18 @@ export default function Home() {
             await sendMessageApi({
                 payload: {
                     senderId: user.id,
-                    receiverId: receiverId ? +receiverId : 0,
+                    receiverId: currentTabUserId ? +currentTabUserId : 0,
                     conversationId: +conversation.id,
                     content: message,
                 },
             });
 
             setMessage("");
-            socket.emit("typing", { senderId: user.id, receiverId: receiverId, isTyping: false });
+            socket.emit("typing", {
+                senderId: user.id,
+                receiverId: currentTabUserId,
+                isTyping: false,
+            });
             isTyping = false;
         }
     };
@@ -132,7 +149,7 @@ export default function Home() {
                         </div>
                     </div>
                 );
-            } else if (message.senderId == receiverId) {
+            } else if (message.senderId == currentTabUserId) {
                 return (
                     <div key={message.id} className="flex items-end gap-x-3 w-[50%]">
                         <div>
@@ -141,7 +158,7 @@ export default function Home() {
                                 style={{
                                     backgroundColor: "#f56a00",
                                     visibility:
-                                        data[index + 1]?.senderId != receiverId
+                                        data[index + 1]?.senderId != currentTabUserId
                                             ? "visible"
                                             : "hidden",
                                 }}
@@ -162,38 +179,41 @@ export default function Home() {
 
     return (
         <>
+            <title>RS | Messages</title>
             <div className="grow flex flex-col justify-end overflow-auto">
                 <div ref={containerRef} className="space-y-2 overflow-auto">
                     {displayMessage(getConversation)}
-                    {isReceiverTyping && (
-                        <div className="flex items-end gap-x-3 w-[50%]">
-                            <div>
-                                <Avatar
-                                    src="https://api.dicebear.com/7.x/miniavs/svg?seed=1"
-                                    style={{
-                                        backgroundColor: "#f56a00",
-                                    }}
-                                />
+                    {typingStatus.isTyping &&
+                        currentTabUserId &&
+                        +currentTabUserId === typingStatus.senderId && (
+                            <div className="flex items-end gap-x-3 w-[50%]">
+                                <div>
+                                    <Avatar
+                                        src="https://api.dicebear.com/7.x/miniavs/svg?seed=1"
+                                        style={{
+                                            backgroundColor: "#f56a00",
+                                        }}
+                                    />
+                                </div>
+                                <div className="h-[32px] flex items-center space-x-1 py-2 px-4 rounded-3xl bg-zinc-100">
+                                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
+                                    <div
+                                        className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                                        style={{
+                                            animationDelay: "0.2s",
+                                            animationFillMode: "backwards",
+                                        }}
+                                    />
+                                    <div
+                                        className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                                        style={{
+                                            animationDelay: "0.4s",
+                                            animationFillMode: "backwards",
+                                        }}
+                                    />
+                                </div>
                             </div>
-                            <div className="h-[32px] flex items-center space-x-1 py-2 px-4 rounded-3xl bg-zinc-100">
-                                <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
-                                <div
-                                    className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
-                                    style={{
-                                        animationDelay: "0.2s",
-                                        animationFillMode: "backwards",
-                                    }}
-                                />
-                                <div
-                                    className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
-                                    style={{
-                                        animationDelay: "0.4s",
-                                        animationFillMode: "backwards",
-                                    }}
-                                />
-                            </div>
-                        </div>
-                    )}
+                        )}
                 </div>
             </div>
             <div className="flex items-end gap-x-3 mt-3">
